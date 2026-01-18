@@ -869,16 +869,16 @@ Kombinasi ini memastikan double approval tidak mungkin terjadi bahkan dalam depl
 └──────────┘                           └─────────────┘
                                               │
                                               ▼
-┌──────────┐     Authorization: Bearer ...   ┌─────────────┐
-│  Client  │ ───────────────────────▶        │   Server    │
-│          │                                │             │
-│          │                           Validate JWT      │
-│          │                           Check Permissions │
-│          │                                │             │
-│          │                           Process Request   │
-│          │                                │             │
-│          │         Response         ◀──── │             │
-└──────────┘                           └─────────────┘
+┌──────────┐     Authorization: Bearer ...  ┌──────────────────┐
+│  Client  │ ───────────────────────▶       │   Server         │
+│          │                                │                  │
+│          │                                │Validate JWT      │
+│          │                                │Check Permissions │
+│          │                                │                  │
+│          │                                │Process Request   │
+│          │                                │                  │
+│          │         Response         ◀──── │                  │
+└──────────┘                                └──────────────────┘
 ```
 
 ---
