@@ -305,7 +305,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"ceo@gmail.com\",\n    \"password\": \"password123\",\n    \"name\": \"CEO\",\n    \"is_admin\": false,\n    \"actor_id\": \"1f6888c0-605a-481c-9cb5-eecd65c4b387\"\n}"
+							"raw": "{\n    \"email\": \"ceo@gmail.com\",\n    \"password\": \"password123\",\n    \"name\": \"CEO\",\n    \"is_admin\": false,\n    \"actor_id\": \"50d3c341-469b-4ea4-bf57-bf7fd5894674\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/users",
@@ -588,7 +588,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"level\": 3,\n    \"actor_id\": \"{{actor_id_ceo}}\",\n    \"conditions\": {\n        \"min_amount\": 3000000\n    },\n    \"description\": \"CEO approval for purchases above 3M\"\n}"
+							"raw": "{\n    \"level\": 3,\n    \"actor_id\": \"{{actor_id_ceo}}\",\n    \"conditions\": {\n        \"min_amount\": 1000000\n    },\n    \"description\": \"Manager approval for purchases above 1M\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/workflows/{{workflowId}}/steps",

@@ -14,7 +14,7 @@ database:
   username: "root"
   password: ""
   name: "workflow_approval"
-  charset: "utf8"
+  charset: "utf8mb4"
   parse_time: true
   max_open_conns: 25
   max_idle_conns: 5
