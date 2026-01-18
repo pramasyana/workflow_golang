@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: workflow-approval-app
+    ports:
+      - "8082:8080"
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8080
+      - APP_ENV=production
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
+      - DB_NAME=workflow_approval
+      - DB_CHARSET=utf8mb4
+      - JWT_SECRET=your-super-secret-key-change-in-production
+      - JWT_EXPIRATION=24
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - workflow-network
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.0
+    container_name: workflow-approval-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=workflow_approval
+      - MYSQL_CHARSET=utf8mb4
+      - MYSQL_COLLATION=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - workflow-network
+    restart: unless-stopped
+
+networks:
+  workflow-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+
+

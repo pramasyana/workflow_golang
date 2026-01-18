@@ -1,0 +1,1690 @@
+openapi: 3.0.3
+info:
+  title: Workflow Approval System API
+  description: |
+    A REST API Service for managing workflow approval systems with double-layer concurrency control.
+    
+    ## Features
+    - JWT Authentication
+    - Workflow management with multiple approval steps
+    - Request submission and approval workflow
+    - Double-layer concurrency control (Mutex + SELECT FOR UPDATE)
+    - Pagination and filtering for list endpoints
+    
+    ## Concurrency Control
+    The approval endpoint uses two layers of protection:
+    - **Layer 1**: In-memory Mutex (sync.Mutex) to prevent race conditions within the same instance
+    - **Layer 2**: Database SELECT FOR UPDATE with optimistic locking (version field)
+    
+    This ensures that double approval is impossible even in distributed deployments.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@workflow-approval.com
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+  - url: https://api.workflow-approval.com
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User login endpoints
+  - name: Users
+    description: User management endpoints
+  - name: Actors
+    description: Actor/Role management endpoints
+  - name: Workflows
+    description: Workflow management endpoints
+  - name: Workflow Steps
+    description: Workflow step management endpoints
+  - name: Requests
+    description: Approval request and processing endpoints
+  - name: Profile
+    description: User profile endpoints
+
+paths:
+  # ========================================
+  # Authentication Endpoints
+  # ========================================
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login user
+      description: Authenticates user and returns JWT token
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========================================
+  # Actor Endpoints
+  # ========================================
+  /api/actors:
+    get:
+      tags:
+        - Actors
+      summary: List all actors
+      description: Returns a list of all actors/roles
+      operationId: listActors
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of actors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Actors
+      summary: Create actor
+      description: Creates a new actor/role
+      operationId: createActor
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActorRequest'
+      responses:
+        '201':
+          description: Actor created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/actors/{id}:
+    get:
+      tags:
+        - Actors
+      summary: Get actor
+      description: Returns an actor by ID
+      operationId: getActor
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Actor ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Actor details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorResponse'
+        '404':
+          description: Actor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Actors
+      summary: Update actor
+      description: Updates an existing actor
+      operationId: updateActor
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Actor ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateActorRequest'
+      responses:
+        '200':
+          description: Actor updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Actor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Actors
+      summary: Delete actor
+      description: Deletes an actor by ID
+      operationId: deleteActor
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Actor ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Actor deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Cannot delete actor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Actor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========================================
+  # Workflow Endpoints
+  # ========================================
+  /api/workflows:
+    get:
+      tags:
+        - Workflows
+      summary: List workflows
+      description: Returns a paginated list of workflows
+      operationId: listWorkflows
+      parameters:
+        - name: page
+          in: query
+          description: Page number (default: 1)
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page (default: 10, max: 100)
+          schema:
+            type: integer
+            default: 10
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of workflows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Workflows
+      summary: Create workflow
+      description: Creates a new workflow for approval processes
+      operationId: createWorkflow
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+      responses:
+        '201':
+          description: Workflow created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/workflows/{id}:
+    get:
+      tags:
+        - Workflows
+      summary: Get workflow
+      description: Returns a workflow by ID
+      operationId: getWorkflow
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workflow details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Workflows
+      summary: Update workflow
+      description: Updates an existing workflow by ID
+      operationId: updateWorkflow
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowRequest'
+      responses:
+        '200':
+          description: Workflow updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Workflows
+      summary: Delete workflow
+      description: Deletes a workflow by ID
+      operationId: deleteWorkflow
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workflow deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========================================
+  # Workflow Step Endpoints
+  # ========================================
+  /api/workflows/{id}/steps:
+    get:
+      tags:
+        - Workflow Steps
+      summary: List workflow steps
+      description: Returns all steps for a workflow
+      operationId: listWorkflowSteps
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of workflow steps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowStepListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Workflow Steps
+      summary: Create workflow step
+      description: Creates a new step for a workflow
+      operationId: createWorkflowStep
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowStepRequest'
+      responses:
+        '201':
+          description: Workflow step created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowStepResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/workflows/{id}/steps/{stepId}:
+    get:
+      tags:
+        - Workflow Steps
+      summary: Get workflow step
+      description: Returns a workflow step by ID
+      operationId: getWorkflowStep
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          description: Step ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workflow step details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowStepResponse'
+        '404':
+          description: Step not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Workflow Steps
+      summary: Update workflow step
+      description: Updates an existing workflow step
+      operationId: updateWorkflowStep
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          description: Step ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowStepRequest'
+      responses:
+        '200':
+          description: Workflow step updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowStepResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Step not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Workflow Steps
+      summary: Delete workflow step
+      description: Deletes a workflow step by ID
+      operationId: deleteWorkflowStep
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Workflow ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          description: Step ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workflow step deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Step not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========================================
+  # Request Endpoints
+  # ========================================
+  /api/requests:
+    get:
+      tags:
+        - Requests
+      summary: List requests
+      description: Returns a paginated list of requests with optional status filter
+      operationId: listRequests
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number (default: 1)
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page (default: 10, max: 100)
+          schema:
+            type: integer
+            default: 10
+        - name: status
+          in: query
+          description: Filter by status (PENDING, APPROVED, REJECTED)
+          schema:
+            type: string
+            enum:
+              - PENDING
+              - APPROVED
+              - REJECTED
+      responses:
+        '200':
+          description: List of requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Requests
+      summary: Create request
+      description: Creates a new approval request
+      operationId: createRequest
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequestRequest'
+      responses:
+        '201':
+          description: Request created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/requests/{id}:
+    get:
+      tags:
+        - Requests
+      summary: Get request
+      description: Returns a request by ID
+      operationId: getRequest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Request ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Requests
+      summary: Update request
+      description: |
+        Updates an existing request. Only allowed if the request is still in PENDING status.
+        
+        Business Rules:
+        - Request must be in PENDING status
+        - Amount must be greater than 0
+      operationId: updateRequest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Request ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRequestRequest'
+      responses:
+        '200':
+          description: Request updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '400':
+          description: Invalid request or request is not pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Requests
+      summary: Delete request
+      description: Deletes a request by ID
+      operationId: deleteRequest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Request ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/requests/{id}/approve:
+    post:
+      tags:
+        - Requests
+      summary: Approve request
+      description: |
+        Approves the current step of a request and moves to the next step.
+        
+        This endpoint uses double-layer concurrency control to prevent race conditions:
+        - **Layer 1**: In-memory Mutex (sync.Mutex) to prevent race conditions within the same application instance
+        - **Layer 2**: Database SELECT FOR UPDATE with optimistic locking (version field) for cross-instance protection
+        
+        Business Rules:
+        - Request must be in PENDING status
+        - Amount must meet the min_amount condition of the current step
+        - If no more steps, status becomes APPROVED
+        
+        Actor Authorization:
+        - The approving user's actor_id (from JWT token) must match the step's actor_id
+        - Admin users can approve any request without actor check
+        - Returns "unauthorized actor" error if actor doesn't match
+        
+        This ensures that double approval is impossible even in distributed deployments.
+      operationId: approveRequest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Request ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request approved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '400':
+          description: Request cannot be approved (not pending, amount below min, unauthorized actor, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - Actor not authorized to approve this step
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/requests/{id}/reject:
+    post:
+      tags:
+        - Requests
+      summary: Reject request
+      description: |
+        Rejects a pending request.
+        
+        Business Rules:
+        - Request must be in PENDING status
+        - Reason is required
+        
+        Actor Authorization:
+        - The rejecting user's actor_id (from JWT token) must match the step's actor_id
+        - Admin users can reject any request without actor check
+        - Returns "unauthorized actor" error if actor doesn't match
+      operationId: rejectRequest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Request ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectRequest'
+      responses:
+        '200':
+          description: Request rejected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '400':
+          description: Request cannot be rejected (not pending, reason required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - Actor not authorized to reject this step
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/requests/{id}/history:
+    get:
+      tags:
+        - Requests
+      summary: Get request approval history
+      description: |
+        Returns the complete approval history for a request.
+        Shows all approval/rejection actions taken on the request including:
+        - Who approved/rejected (actor)
+        - When (timestamp)
+        - Which step
+        - Action taken (APPROVE/REJECT)
+        - Comment/reason if provided
+      operationId: getRequestHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Request ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Approval history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalHistoryResponse'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========================================
+  # Users Endpoints
+  # ========================================
+  /api/users:
+    post:
+      tags:
+        - Users
+      summary: Create a new user
+      description: Creates a new user account (Admin only in production)
+      operationId: createUser
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========================================
+  # Profile Endpoints
+  # ========================================
+  /api/profile:
+    get:
+      tags:
+        - Profile
+      summary: Get current user profile
+      description: Returns the profile of the currently authenticated user
+      operationId: getProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Profile
+      summary: Update current user profile
+      description: Updates the profile of the currently authenticated user
+      operationId: updateProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Authorization header using the Bearer scheme
+
+  schemas:
+    # ========================================
+    # Authentication Schemas
+    # ========================================
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: password123
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserResponse'
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          description: JWT token for authentication
+
+    # ========================================
+    # Actor Schemas
+    # ========================================
+    CreateActorRequest:
+      type: object
+      required:
+        - name
+        - code
+      properties:
+        name:
+          type: string
+          example: Manager
+          description: Actor name
+        code:
+          type: string
+          example: manager
+          description: Actor code (unique identifier)
+
+    UpdateActorRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Senior Manager
+          description: Updated actor name
+
+    ActorResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440001
+        name:
+          type: string
+          example: Manager
+        code:
+          type: string
+          example: manager
+        created_at:
+          type: string
+          format: date-time
+
+    ActorListResponse:
+      type: object
+      properties:
+        actors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActorResponse'
+
+    # ========================================
+    # Workflow Schemas
+    # ========================================
+    CreateWorkflowRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Purchase Approval
+          description: Name of the workflow
+
+    UpdateWorkflowRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Updated Purchase Approval
+          description: Updated name of the workflow
+
+    WorkflowResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          example: Purchase Approval
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-01T10:00:00Z"
+
+    WorkflowListResponse:
+      type: object
+      properties:
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowResponse'
+        total:
+          type: integer
+          example: 1
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+
+    # ========================================
+    # Workflow Step Schemas
+    # ========================================
+    CreateWorkflowStepRequest:
+      type: object
+      required:
+        - level
+        - actor
+      properties:
+        level:
+          type: integer
+          minimum: 1
+          example: 1
+          description: Step level (unique per workflow)
+        actor:
+          type: string
+          example: Manager
+          description: Role/actor for this step
+        conditions:
+          type: object
+          description: Step conditions
+          properties:
+            min_amount:
+              type: number
+              example: 1000000
+            max_amount:
+              type: number
+              example: 5000000
+            roles:
+              type: array
+              items:
+                type: string
+          example:
+            min_amount: 1000000
+        description:
+          type: string
+          example: First level approval for purchases above 1M
+          description: Optional step description
+
+    UpdateWorkflowStepRequest:
+      type: object
+      properties:
+        level:
+          type: integer
+          minimum: 1
+          example: 2
+          description: Updated step level
+        actor:
+          type: string
+          example: Director
+          description: Updated role/actor for this step
+        conditions:
+          type: object
+          description: Updated step conditions
+          properties:
+            min_amount:
+              type: number
+          example:
+            min_amount: 2000000
+        description:
+          type: string
+          description: Updated step description
+
+    WorkflowStepResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440001
+        workflow_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        level:
+          type: integer
+          example: 1
+        actor:
+          type: string
+          example: Manager
+        conditions:
+          type: object
+          properties:
+            min_amount:
+              type: number
+          example:
+            min_amount: 1000000
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    WorkflowStepListResponse:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStepResponse'
+        total:
+          type: integer
+          example: 2
+
+    # ========================================
+    # Request Schemas
+    # ========================================
+    CreateRequestRequest:
+      type: object
+      required:
+        - workflow_id
+        - amount
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID of the workflow to use
+        amount:
+          type: number
+          minimum: 0.01
+          example: 1500000
+          description: Request amount
+        title:
+          type: string
+          example: Office Supplies Purchase
+          description: Request title
+        description:
+          type: string
+          example: Monthly office supplies for Q1
+          description: Request description
+
+    UpdateRequestRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          minimum: 0.01
+          example: 2000000
+          description: Updated request amount
+        title:
+          type: string
+          example: Updated Office Supplies Purchase
+          description: Updated request title
+        description:
+          type: string
+          description: Updated request description
+
+    RequestResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440002
+        workflow_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        current_step:
+          type: integer
+          example: 1
+          description: Current approval step
+        status:
+          type: string
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+          example: PENDING
+        amount:
+          type: number
+          example: 1500000
+        title:
+          type: string
+          example: Office Supplies Purchase
+        description:
+          type: string
+          example: Monthly office supplies for Q1
+        requester_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RequestListResponse:
+      type: object
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequestResponse'
+        total:
+          type: integer
+          example: 1
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+
+    RejectRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          example: Insufficient documentation
+          description: Reason for rejection
+
+    # ========================================
+    # Approval History Schemas
+    # ========================================
+    ApprovalHistoryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            request_id:
+              type: string
+              format: uuid
+              example: 550e8400-e29b-41d4-a716-446655440002
+            history:
+              type: array
+              items:
+                $ref: '#/components/schemas/ApprovalHistoryEntry'
+        error:
+          type: null
+
+    ApprovalHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440003
+        request_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440002
+        workflow_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        step_level:
+          type: integer
+          example: 1
+        actor_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440001
+        user_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440004
+          description: User ID who performed the action
+        action:
+          type: string
+          enum:
+            - APPROVE
+            - REJECT
+          example: APPROVE
+        comment:
+          type: string
+          example: Approved for purchase
+          description: Comment or rejection reason
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:30:00Z"
+
+    # ========================================
+    # User Schemas
+    # ========================================
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+          description: User's email address
+        password:
+          type: string
+          format: password
+          minLength: 6
+          example: password123
+          description: User's password (min 6 characters)
+        name:
+          type: string
+          example: John Doe
+          description: User's full name
+        is_admin:
+          type: boolean
+          example: false
+          description: Whether the user has admin privileges
+        actor_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440001
+          description: Optional actor ID to associate with the user
+
+    # ========================================
+    # Profile Schemas
+    # ========================================
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Updated Name
+          description: Updated user name
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        name:
+          type: string
+          example: John Doe
+        role:
+          type: string
+          example: user
+          description: User role (user, admin)
+        actor_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440001
+          description: Actor ID associated with the user (from JWT token)
+        is_admin:
+          type: boolean
+          example: false
+          description: Whether the user has admin privileges (from JWT token)
+
+    # ========================================
+    # Common Schemas
+    # ========================================
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            message:
+              type: string
+              example: Workflow deleted successfully
+        error:
+          type: null
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          type: null
+        error:
+          type: string
+          example: Error message here
+
+    RequestStatus:
+      type: string
+      enum:
+        - PENDING
+        - APPROVED
+        - REJECTED
+      description: Status of a request

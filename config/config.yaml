@@ -1,0 +1,32 @@
+# Workflow Approval System Configuration
+
+# Application Configuration
+app:
+  host: "0.0.0.0"
+  port: 8080
+  name: "Workflow Approval System"
+  env: "development"
+
+# Database Configuration (MySQL)
+database:
+  host: "localhost"
+  port: 3306
+  username: "root"
+  password: ""
+  name: "workflow_approval"
+  charset: "utf8"
+  parse_time: true
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+
+# JWT Configuration
+jwt:
+  secret: "your-super-secret-key-change-in-production"
+  expiration: 24
+  issuer: "workflow-approval-system"
+
+# Logging Configuration
+logging:
+  level: "debug"
+  format: "json"
