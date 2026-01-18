@@ -8,6 +8,8 @@ import (
 )
 
 // ApprovalHistoryRepository defines the interface for approval history data access
+//
+//go:generate mockery --with-expecter --name=ApprovalHistoryRepository --output=mocks --filename=ApprovalHistoryRepository.go
 type ApprovalHistoryRepository interface {
 	// Create creates a new approval history entry
 	Create(ctx context.Context, history *domain.ApprovalHistory) error
@@ -26,6 +28,8 @@ type ApprovalHistoryRepository interface {
 }
 
 // ApprovalHistoryService defines the interface for approval history business logic
+//
+//go:generate mockery --with-expecter --name=ApprovalHistoryService --output=mocks --filename=ApprovalHistoryService.go
 type ApprovalHistoryService interface {
 	// GetHistoryByRequestID retrieves all approval history for a request with details
 	GetHistoryByRequestID(ctx context.Context, requestID string) ([]*dto.ApprovalHistoryResponse, error)

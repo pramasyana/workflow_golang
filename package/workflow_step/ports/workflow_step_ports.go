@@ -7,6 +7,8 @@ import (
 )
 
 // WorkflowStepRepository defines the interface for workflow step data access
+//
+//go:generate mockery --with-expecter --name=WorkflowStepRepository --output=mocks --filename=WorkflowStepRepository.go
 type WorkflowStepRepository interface {
 	Create(ctx context.Context, step *stepDomain.WorkflowStep) error
 	GetByID(ctx context.Context, id string) (*stepDomain.WorkflowStep, error)
@@ -17,6 +19,8 @@ type WorkflowStepRepository interface {
 }
 
 // WorkflowStepService defines the interface for workflow step business logic
+//
+//go:generate mockery --with-expecter --name=WorkflowStepService --output=mocks --filename=WorkflowStepService.go
 type WorkflowStepService interface {
 	CreateStep(ctx context.Context, workflowID string, level int, actorID string, conditions stepDomain.StepConditions) (*stepDomain.WorkflowStep, error)
 	GetSteps(ctx context.Context, workflowID string) ([]*stepDomain.WorkflowStep, error)

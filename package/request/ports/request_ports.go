@@ -7,6 +7,8 @@ import (
 )
 
 // RequestRepository defines the interface for request data access
+//
+//go:generate mockery --with-expecter --name=RequestRepository --output=mocks --filename=RequestRepository.go
 type RequestRepository interface {
 	Create(ctx context.Context, request *domain.Request) error
 	GetByID(ctx context.Context, id string) (*domain.Request, error)
@@ -17,6 +19,8 @@ type RequestRepository interface {
 }
 
 // RequestService defines the interface for request business logic
+//
+//go:generate mockery --with-expecter --name=RequestService --output=mocks --filename=RequestService.go
 type RequestService interface {
 	CreateRequest(ctx context.Context, workflowID, requesterID string, amount float64, title, description string) (*domain.Request, error)
 	GetRequest(ctx context.Context, id string) (*domain.Request, error)
